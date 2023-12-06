@@ -3,21 +3,12 @@ from typing import Any, Dict, Optional, Tuple
 import torch
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
-from torchvision.datasets import MNIST
+from components.radar_dataset import RadarDataset
 from torchvision.transforms import transforms
 
 
-class MNISTDataModule(LightningDataModule):
-    """`LightningDataModule` for the MNIST dataset.
-
-    The MNIST database of handwritten digits has a training set of 60,000 examples, and a test set of 10,000 examples.
-    It is a subset of a larger set available from NIST. The digits have been size-normalized and centered in a
-    fixed-size image. The original black and white images from NIST were size normalized to fit in a 20x20 pixel box
-    while preserving their aspect ratio. The resulting images contain grey levels as a result of the anti-aliasing
-    technique used by the normalization algorithm. the images were centered in a 28x28 image by computing the center of
-    mass of the pixels, and translating the image so as to position this point at the center of the 28x28 field.
-
-    A `LightningDataModule` implements 7 key methods:
+class RadarDataModule(LightningDataModule):
+    """A `LightningDataModule` implements 7 key methods:
 
     ```python
         def prepare_data(self):
@@ -48,19 +39,21 @@ class MNISTDataModule(LightningDataModule):
     This allows you to share a full dataset without explaining how to download,
     split, transform and process the data.
 
-    Read the docs:
-        https://lightning.ai/docs/pytorch/latest/data/datamodule.html
     """
 
     def __init__(
         self,
-        data_dir: str = "data/",
-        train_val_test_split: Tuple[int, int, int] = (55_000, 5_000, 10_000),
-        batch_size: int = 64,
+        data_train_dir: str = "data/train",
+        data_test_dir: str = "data/test",
+        data_val_dir: str = "data/val",
+        data_train: RadarDataset = None,
+        data_test: RadarDataset = None,
+        data_val: RadarDataset = None,
+        batch_size: int = 8,
         num_workers: int = 0,
         pin_memory: bool = False,
     ) -> None:
-        """Initialize a `MNISTDataModule`.
+        """Initialize a `RadarDataModule`.
 
         :param data_dir: The data directory. Defaults to `"data/"`.
         :param train_val_test_split: The train, validation and test split. Defaults to `(55_000, 5_000, 10_000)`.
@@ -85,24 +78,8 @@ class MNISTDataModule(LightningDataModule):
 
         self.batch_size_per_device = batch_size
 
-    @property
-    def num_classes(self) -> int:
-        """Get the number of classes.
-
-        :return: The number of MNIST classes (10).
-        """
-        return 10
-
     def prepare_data(self) -> None:
-        """Download data if needed. Lightning ensures that `self.prepare_data()` is called only
-        within a single process on CPU, so you can safely add your downloading logic within. In
-        case of multi-node training, the execution of this hook depends upon
-        `self.prepare_data_per_node()`.
-
-        Do not use it to assign state (self.x = y).
-        """
-        MNIST(self.hparams.data_dir, train=True, download=True)
-        MNIST(self.hparams.data_dir, train=False, download=True)
+        pass
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
@@ -124,14 +101,10 @@ class MNISTDataModule(LightningDataModule):
 
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
-            trainset = MNIST(self.hparams.data_dir, train=True, transform=self.transforms)
-            testset = MNIST(self.hparams.data_dir, train=False, transform=self.transforms)
-            dataset = ConcatDataset(datasets=[trainset, testset])
-            self.data_train, self.data_val, self.data_test = random_split(
-                dataset=dataset,
-                lengths=self.hparams.train_val_test_split,
-                generator=torch.Generator().manual_seed(42),
-            )
+            self.data_train = self.hparams.data_train(self.hparams.data_train_dir)
+            self.data_val = self.hparams.data_val(self.hparams.data_val_dir)
+            self.data_test = self.hparams.data_test(self.hparams.data_test_dir)
+        
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.
@@ -143,7 +116,7 @@ class MNISTDataModule(LightningDataModule):
             batch_size=self.batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
-            shuffle=True,
+            shuffle=False,
         )
 
     def val_dataloader(self) -> DataLoader[Any]:
@@ -198,4 +171,47 @@ class MNISTDataModule(LightningDataModule):
 
 
 if __name__ == "__main__":
-    _ = MNISTDataModule()
+    import rootutils
+    from omegaconf import DictConfig
+    import hydra
+    from tqdm import tqdm
+
+    path = rootutils.find_root(search_from=__file__, indicator=".project-root")
+    config_path = str(path / "configs" / "data")
+    print("root:", path, config_path)
+    rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+
+    def test_dataset(cfg: DictConfig):
+        dataset: RadarDataset = hydra.utils.instantiate(cfg.data_train)
+        dataset = dataset(data_dir=cfg.data_train_dir)
+        print("dataset", len(dataset))
+
+        sequence, output = dataset[1]
+
+        print("sequence shape", sequence.shape)
+        print("output shape", output.shape)
+
+    def test_datamodule(cfg: DictConfig):
+        datamodule: LightningDataModule = hydra.utils.instantiate(cfg)
+        datamodule.prepare_data()
+        datamodule.setup()
+        loader = datamodule.train_dataloader()
+        bx, by = next(iter(loader))
+        print("n_batch", len(loader), bx.shape, by.shape, type(by))
+        for bx, by in tqdm(datamodule.train_dataloader()):
+            pass
+        print("training data passed")
+
+        for bx, by in tqdm(datamodule.val_dataloader()):
+            pass
+        print("validation data passed")
+
+        for bx, by in tqdm(datamodule.test_dataloader()):
+            pass
+        print("test data passed")
+
+    @hydra.main(version_base="1.3", config_path=config_path, config_name="radar.yaml")
+    def main(cfg: DictConfig):
+        test_dataset(cfg)
+        test_datamodule(cfg)
+    main()
