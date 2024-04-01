@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 import torch
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
-from components.radar_dataset import RadarDataset
+from .components.radar_dataset import RadarDataset
 from torchvision.transforms import transforms
 
 
@@ -45,11 +45,11 @@ class RadarDataModule(LightningDataModule):
         self,
         data_train_dir: str = "data/train",
         data_test_dir: str = "data/test",
-        data_val_dir: str = "data/val",
+        train_val_split: Tuple[float, float] = (0.9, 0.1),
         data_train: RadarDataset = None,
         data_test: RadarDataset = None,
         data_val: RadarDataset = None,
-        batch_size: int = 8,
+        batch_size: int = 4,
         num_workers: int = 0,
         pin_memory: bool = False,
     ) -> None:
@@ -68,9 +68,9 @@ class RadarDataModule(LightningDataModule):
         self.save_hyperparameters(logger=False)
 
         # data transformations
-        self.transforms = transforms.Compose(
-            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-        )
+        # self.transforms = transforms.Compose(
+        #     [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        # )
 
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
@@ -101,8 +101,12 @@ class RadarDataModule(LightningDataModule):
 
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
-            self.data_train = self.hparams.data_train(self.hparams.data_train_dir)
-            self.data_val = self.hparams.data_val(self.hparams.data_val_dir)
+            dataset = self.hparams.data_train(self.hparams.data_train_dir)
+            self.data_train, self.data_val = random_split(
+                dataset=dataset,
+                lengths=self.hparams.train_val_split,
+                generator=torch.Generator().manual_seed(42),
+            )
             self.data_test = self.hparams.data_test(self.hparams.data_test_dir)
         
 
@@ -183,7 +187,7 @@ if __name__ == "__main__":
 
     def test_dataset(cfg: DictConfig):
         dataset: RadarDataset = hydra.utils.instantiate(cfg.data_train)
-        dataset = dataset(data_dir=cfg.data_train_dir)
+        dataset = dataset(data_dir=cfg.data_test_dir)
         print("dataset", len(dataset))
 
         sequence, output = dataset[1]

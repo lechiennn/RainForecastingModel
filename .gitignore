@@ -153,4 +153,5 @@ configs/local/default.yaml
 # Aim logging
 .aim
 Radar*
-outputs/
+outputs*
+src/utils/shapefile/btb*

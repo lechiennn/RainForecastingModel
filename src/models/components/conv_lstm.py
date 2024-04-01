@@ -1,14 +1,14 @@
 import torch
 from torch import nn
-from conv_lstm_cell import ConvLSTMCell
+from .conv_lstm_cell import ConvLSTMCell
 
 class ConvLSTM(nn.Module):
 
     def __init__(
             self,
             input_channel: int,
-            hidden_channel: int,
-            kernel_size: (int, int),
+            hidden_channel,
+            kernel_size: [int, int],
             num_layers: int,
             batch_first: bool,
             bias: bool,
@@ -16,11 +16,11 @@ class ConvLSTM(nn.Module):
     ) -> None:
         super(ConvLSTM, self).__init__()
 
-        self._check_kernel_size_consistency(kernel_size)
+        # self._check_kernel_size_consistency(kernel_size)
         
         self.input_channel = input_channel
         self.hidden_channel = hidden_channel
-        self.kernel_size = kernel_size
+        self.kernel_size = tuple(kernel_size)
         self.num_layers = num_layers
         self.batch_first = batch_first
         self.bias = bias
@@ -29,13 +29,17 @@ class ConvLSTM(nn.Module):
         cell_list = []
 
         for i in range(0, self.num_layers):
-            cur_input_channel = self.input_channel if i == 0 else self.hidden_channel
+            cur_input_channel = self.input_channel if i == 0 else self.hidden_channel[i - 1]
             cell_list.append(ConvLSTMCell(input_channel=cur_input_channel,
-                                          hidden_channel=hidden_channel,
-                                          kernel_size=kernel_size,
-                                          bias=bias))
+                                          hidden_channel=self.hidden_channel[i],
+                                          kernel_size=self.kernel_size,
+                                          bias=self.bias))
             
         self.cell_list = nn.ModuleList(cell_list)
+
+        self.conv1x1 = nn.Conv2d(in_channels=self.hidden_channel[-1],
+                               out_channels=1,
+                               kernel_size=(1,1))
     
     def forward(self, input_tensor, hidden_state=None):
         '''
@@ -73,11 +77,12 @@ class ConvLSTM(nn.Module):
             layer_output_list.append(layer_output)
             last_state_list.append([h, c])
         
-        if not self.return_all_layers:
-            layer_output_list = layer_output_list[-1:]
-            last_state_list = last_state_list[-1:]
+        # if not self.return_all_layers:
+        #     layer_output_list = layer_output_list[-1:]
+        #     last_state_list = last_state_list[-1:]
 
-        return layer_output_list, last_state_list
+        output = self.conv1x1(last_state_list[-1][0])
+        return output
 
 
     def _init_hidden(self, batch_size, image_size):
@@ -94,11 +99,12 @@ class ConvLSTM(nn.Module):
 
 
 if __name__ == '__main__':
-    convLSTM = ConvLSTM(input_channel=1, hidden_channel=1, bias=True,
-                        kernel_size=(3,3),num_layers=1,batch_first=True, return_all_layers=True)
+    convLSTM = ConvLSTM(input_channel=1, hidden_channel=3, bias=True,
+                        kernel_size=[3,3],num_layers=2,batch_first=True, return_all_layers=False)
     
-    input = torch.rand((3,5,1,90,250))
+    input = torch.rand((4,5,1,90,250))
     output = convLSTM(input)
-    print(output[0][0].shape) ### stack output cua tat ca shell cua tat ca layer #dim = (return,layer)
-    print(output[1][0][0].shape) ###### output here (dim = (return,layer,h))
-    print(output[1][0][1].shape) #### c cua last output (dim = (return,layer,h, c))
+    print(output.shape)
+    # print(output[0][0].shape) ### stack output cua tat ca shell cua tat ca layer #dim = (return,layer)
+    # print(type(output[1][0][0]), output[1][0][0].shape, output[1][0][0].isnan().any()) ###### output here (dim = (return,layer,h))
+    # print(output[1][0][1].shape) #### c cua last output (dim = (return,layer, c))

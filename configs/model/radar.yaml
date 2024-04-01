@@ -1,0 +1,27 @@
+_target_: src.models.radar_module.RadarLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.0005
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.components.conv_lstm.ConvLSTM
+  input_channel: 1
+  hidden_channel: [8, 32, 64]
+  kernel_size: [3, 3]
+  num_layers: 3
+  batch_first: true
+  bias: True
+  return_all_layers: False
+
+# compile model for faster training with pytorch 2.0
+compile: false

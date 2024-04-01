@@ -1,9 +1,9 @@
 _target_: src.data.radar_datamodule.RadarDataModule
 # data_dir: ${paths.data_dir}
-data_train_dir: data/train
-data_test_dir: data/test
-data_val_dir: data/val
-batch_size: 8 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+data_train_dir: "data/train"
+data_test_dir: "data/test"
+train_val_split: [0.9, 0.1]
+batch_size: 4 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 num_workers: 0
 pin_memory: False
 

@@ -4,17 +4,19 @@ import torchvision
 import torch
 import gdal
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
 class RadarDataset(Dataset):
     def __init__(
             self,
-            dataset: str,
+            data_dir: str,
             sequence_length: int
         ) -> None:
         super().__init__()
-        self.dataset = dataset
+
         self.sequence_length = sequence_length + 1 #last for output
-        self.data_dir = os.path.join('data', dataset)
+        self.data_dir = data_dir
 
         dateList = []
         imageList = []
@@ -48,25 +50,52 @@ class RadarDataset(Dataset):
             # image = os.path.join(self.data_dir, self.imageList[index+seq_index])
             image = gdal.Open(image)
             band = image.GetRasterBand(1).ReadAsArray()
+            ##
+            # band[band == -np.inf] = 0
+            # band[band < 0] = 0
+            # print(np.min(band))
+            ##
             stack.append(torchvision.transforms.ToTensor()(band))
-        output = sequence[-1]
-        output = gdal.Open(output)
+        output_name = sequence[-1]
+        output = gdal.Open(output_name)
         output = output.GetRasterBand(1).ReadAsArray()
-
-        return torch.stack(stack), torchvision.transforms.ToTensor()(output)
+        # output[output < 0] = 0
+        
+        return torch.stack(stack), torchvision.transforms.ToTensor()(output), output_name
     
+    @staticmethod
+    def plotCmap(pred, target):
+        plt.close()
+        pred_array = pred.cpu().numpy().squeeze()
+        target_array = target.cpu().numpy().squeeze()
+        norm = plt.Normalize(vmin=0, vmax=max(np.max(pred_array), np.max(target_array)))
+        cmap = plt.get_cmap('viridis')
+        fig, (ax1, ax2) = plt.subplots(2, 1)
+        rgba_pred = cmap(norm(pred_array))
+        rbga_target = cmap(norm(target_array))
+
+        ax1.set_title('Predict')
+        ax2.set_title('Target')
+        
+        ax1.imshow(rgba_pred)
+        ax2.imshow(rbga_target)
+
+        return fig
+
+
 if __name__ == '__main__':
 
-    dataset = RadarDataset('test', 5)
+    dataset = RadarDataset('data/train', 5)
     print(len(dataset))
     print(dataset.sequenceList[1])
 
-    input, output = dataset[1]
-    print(input.shape)
-    print(output.shape)
+    
+    # print(output.isnan().any())
+    # print(input.shape)
+    # print(output.shape)
+    # print(output.max())
     # dataset = RadarDataset('/home/lechiennn/lab/thesis/RainForecastingModel/data/train', 5)
     
-    # print(len(dataset.imageList))
-    # input, output = dataset[1]
-    # print(type(input), type(output))
-    # print(input.shape, output.shape)
+    tensor = torch.rand(4, 1, 90, 250).cuda()
+
+    fig = RadarDataset.plotCmap(tensor, tensor)
