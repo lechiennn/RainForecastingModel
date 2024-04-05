@@ -24,4 +24,4 @@ pytest          # tests
 # sh            # for running bash commands in some tests (linux/macos only)
 GDAL==3.0.4 # sudo apt install libpq-dev gdal-bin libgdal-dev
 geopandas==0.13.2
-matplotlib==3.7.4
+matplotlib==3.8.4
